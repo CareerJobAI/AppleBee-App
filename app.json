@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Applebee Interview Intelligence",
+    "slug": "applebee-live-interview",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "applebee-interview",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#09090b"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.applebee.interviewintelligence",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Applebee requires microphone access to transcribe live interview questions and provide real-time voice copilot assistance."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#09090b"
+      },
+      "package": "com.applebee.interviewintelligence",
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "INTERNET"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Applebee to listen to interview questions and provide instant talking points."
+        }
+      ]
+    ]
+  }
+}

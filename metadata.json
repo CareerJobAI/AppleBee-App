@@ -1,0 +1,8 @@
+{
+  "name": "Applebee Live Interview Widget",
+  "description": "Intelligent, compact live interview copilot for Applebee Interview Intelligence that listens, detects questions in real time, and delivers instant structured answers, talking points, and visual diagrams.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
