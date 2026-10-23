@@ -41,6 +41,9 @@ export const LiveInterviewWidget: React.FC<LiveInterviewWidgetProps> = ({ sessio
     saveCurrentAnswer,
     simulateInterviewQuestion,
     setCurrentAnswer,
+    activeVoiceEntities,
+    isModelSpeaking,
+    liveVoiceHighlightSummary,
   } = session;
 
   // Auto-switch to answer tab when an answer arrives
@@ -255,6 +258,9 @@ export const LiveInterviewWidget: React.FC<LiveInterviewWidgetProps> = ({ sessio
                           isSaved={savedAnswers.some(
                             (a) => a.id === currentAnswer.id || a.question === currentAnswer.question
                           )}
+                          activeVoiceEntities={activeVoiceEntities}
+                          isLiveVoiceActive={isModelSpeaking}
+                          liveVoiceHighlightSummary={liveVoiceHighlightSummary}
                         />
                       ) : (
                         <div className="py-8 text-center text-zinc-500 text-xs space-y-2">

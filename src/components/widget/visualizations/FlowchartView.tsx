@@ -11,10 +11,11 @@ interface FlowchartData {
   steps: FlowStep[];
 }
 
-export const FlowchartView: React.FC<{ data: FlowchartData; title?: string }> = ({
-  data,
-  title,
-}) => {
+export const FlowchartView: React.FC<{
+  data: FlowchartData;
+  title?: string;
+  activeVoiceEntities?: string[];
+}> = ({ data, title, activeVoiceEntities = [] }) => {
   const steps = data?.steps || [];
   if (steps.length === 0) return null;
 

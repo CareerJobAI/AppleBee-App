@@ -744,18 +744,44 @@ wss.on('connection', async (clientWs: WebSocket) => {
               prebuiltVoiceConfig: { voiceName: 'Zephyr' },
             },
           },
+          // Real-time transcription for spoken voice responses
+          outputAudioTranscription: {},
+          inputAudioTranscription: {},
           systemInstruction:
             'You are the Applebee Live Interview Voice Intelligence Copilot. You converse in real time with technical interview candidates. Keep voice responses glanceable, punchy, crisp, and senior-level.',
         },
         callbacks: {
           onmessage: (message: LiveServerMessage) => {
-            const audioData =
-              message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audioData && clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(JSON.stringify({ audio: audioData }));
+            const parts = message.serverContent?.modelTurn?.parts || [];
+            let modelText = '';
+            let audioData: string | undefined;
+
+            for (const part of parts as any[]) {
+              if (part.text) {
+                modelText += part.text;
+              }
+              if (part.inlineData?.data) {
+                audioData = part.inlineData.data;
+              }
             }
-            if (message.serverContent?.interrupted && clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(JSON.stringify({ interrupted: true }));
+
+            const outputTrans = (message.serverContent as any)?.outputAudioTranscription?.text;
+            const transcription = modelText || outputTrans;
+
+            if (clientWs.readyState === WebSocket.OPEN) {
+              if (audioData || transcription) {
+                clientWs.send(
+                  JSON.stringify({
+                    audio: audioData,
+                    transcription: transcription || undefined,
+                    turnComplete: message.serverContent?.turnComplete,
+                    role: 'model',
+                  })
+                );
+              }
+              if (message.serverContent?.interrupted) {
+                clientWs.send(JSON.stringify({ interrupted: true }));
+              }
             }
           },
         },
@@ -800,16 +826,35 @@ wss.on('connection', async (clientWs: WebSocket) => {
         });
       }
 
-      // If client sent text prompt to Live API
+      // If client sent text prompt or voice question to Live API
       if (parsed.text && liveSession) {
         liveSession.sendRealtimeInput({
           text: parsed.text,
         });
       }
 
-      // Voice config change
-      if (parsed.voice && liveSession) {
-        // Updated voice preference handled
+      // Simulated voice response loop for testing and offline environments
+      if (parsed.simulateVoiceResponse && clientWs.readyState === WebSocket.OPEN) {
+        const spokenChunks = [
+          'For a scalable .NET API on Azure, client ingress passes through Azure API Management.',
+          'The gateway enforces JWT validation and rate limiting before forwarding to ASP.NET Core API microservices.',
+          'Stateful operations use read-through Azure Cache for Redis to guarantee sub-5ms p99 response times.',
+          'Persistence is partitioned across Azure SQL and Cosmos DB with Polly handling transient retry resilience.',
+        ];
+
+        for (let i = 0; i < spokenChunks.length; i++) {
+          setTimeout(() => {
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(
+                JSON.stringify({
+                  transcription: spokenChunks[i],
+                  turnComplete: i === spokenChunks.length - 1,
+                  role: 'model',
+                })
+              );
+            }
+          }, i * 1200);
+        }
       }
     } catch (e) {
       // Ignore audio parsing jitter

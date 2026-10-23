@@ -7,23 +7,317 @@ import {
   ScrollView,
   SafeAreaView,
   StatusBar,
-  TextInput,
-  ActivityIndicator,
+  Dimensions,
+  PanResponder,
+  Animated,
   Share,
 } from 'react-native';
 import { Audio } from 'expo-av';
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+interface FloatingWidgetProps {
+  isListening: boolean;
+  onToggleListen: () => void;
+  currentAnswer: {
+    question: string;
+    quickAnswer: string;
+    talkingPoints: string[];
+    explanation: string;
+  };
+  liveVoiceTranscript: string;
+  activeSpokenEntities: string[];
+  isVoiceActive: boolean;
+  onTriggerVoiceSync: () => void;
+}
+
+// -------------------------------------------------------------
+// PERSISTENT FLOATING WIDGET FOR EXPO GO MOBILE APP
+// -------------------------------------------------------------
+const FloatingMobileWidget: React.FC<FloatingWidgetProps> = ({
+  isListening,
+  onToggleListen,
+  currentAnswer,
+  liveVoiceTranscript,
+  activeSpokenEntities,
+  isVoiceActive,
+  onTriggerVoiceSync,
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Dragging coordinates via Animated.ValueXY
+  const pan = useRef(
+    new Animated.ValueXY({
+      x: SCREEN_WIDTH - 76,
+      y: SCREEN_HEIGHT - 210,
+    })
+  ).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only treat as drag if moved more than 4 pixels to avoid blocking simple taps
+        return Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4;
+      },
+      onPanResponderGrant: () => {
+        pan.setOffset({
+          // @ts-ignore
+          x: pan.x._value,
+          // @ts-ignore
+          y: pan.y._value,
+        });
+        pan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: (_, gestureState) => {
+        pan.flattenOffset();
+        // Clamping to screen edges
+        // @ts-ignore
+        let currentX = pan.x._value;
+        // @ts-ignore
+        let currentY = pan.y._value;
+
+        const widgetW = isExpanded ? 330 : 64;
+        const widgetH = isExpanded ? 440 : 64;
+
+        const minX = 12;
+        const maxX = SCREEN_WIDTH - widgetW - 12;
+        const minY = 50;
+        const maxY = SCREEN_HEIGHT - widgetH - 70;
+
+        Animated.spring(pan, {
+          toValue: {
+            x: Math.max(minX, Math.min(maxX, currentX)),
+            y: Math.max(minY, Math.min(maxY, currentY)),
+          },
+          useNativeDriver: false,
+          friction: 6,
+        }).start();
+      },
+    })
+  ).current;
+
+  // Visual Nodes for live voice-to-visual response mapping
+  const visualNodes = [
+    { id: '1', label: 'Client Ingress', role: 'HTTPS 1.3' },
+    { id: '2', label: 'Azure API Mgmt', role: 'Gateway & JWT' },
+    { id: '3', label: 'ASP.NET Core API', role: 'Stateless Autoscaled' },
+    { id: '4', label: 'Azure Redis Cache', role: 'Read Model <2ms' },
+    { id: '5', label: 'Azure SQL / Cosmos', role: 'Persistence Store' },
+  ];
+
+  return (
+    <Animated.View
+      style={[
+        styles.floatingContainer,
+        {
+          transform: [{ translateX: pan.x }, { translateY: pan.y }],
+        },
+      ]}
+      {...panResponder.panHandlers}
+    >
+      {!isExpanded ? (
+        // -------------------------------------------------------------
+        // COLLAPSED FLOATING LAUNCHER PILL
+        // -------------------------------------------------------------
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => setIsExpanded(true)}
+          style={[
+            styles.collapsedLauncher,
+            isListening && styles.collapsedLauncherListening,
+            isVoiceActive && styles.collapsedLauncherVoiceActive,
+          ]}
+        >
+          <View style={styles.launcherLogo}>
+            <Text style={styles.launcherLogoText}>AB</Text>
+          </View>
+
+          {isVoiceActive ? (
+            <View style={styles.voiceWaveRow}>
+              <View style={[styles.waveBar, styles.waveBar1]} />
+              <View style={[styles.waveBar, styles.waveBar2]} />
+              <View style={[styles.waveBar, styles.waveBar3]} />
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.miniStatusDot,
+                isListening ? styles.dotListening : styles.dotIdle,
+              ]}
+            />
+          )}
+
+          <Text style={styles.launcherBadgeText}>
+            {isVoiceActive ? 'Voice' : isListening ? 'Live' : 'Copilot'}
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        // -------------------------------------------------------------
+        // EXPANDED FLOATING COPILOT CARD (OVERLAY OVER ANY APP TAB)
+        // -------------------------------------------------------------
+        <View style={styles.expandedCard}>
+          {/* Draggable Drag Handle & Header */}
+          <View style={styles.floatingHeader}>
+            <View style={styles.dragHandleBar} />
+            <View style={styles.floatingHeaderRow}>
+              <View style={styles.floatingTitleGroup}>
+                <View style={styles.miniLogo}>
+                  <Text style={styles.miniLogoText}>AB</Text>
+                </View>
+                <View>
+                  <Text style={styles.floatingTitle}>Applebee Live Copilot</Text>
+                  <Text style={styles.floatingSubtitle}>
+                    {isVoiceActive ? 'Voice Transcribing Live' : isListening ? 'Listening' : 'Floating Widget'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.floatingHeaderActions}>
+                <TouchableOpacity
+                  onPress={onToggleListen}
+                  style={[
+                    styles.miniHeaderButton,
+                    isListening ? styles.miniHeaderButtonActive : styles.miniHeaderButtonInactive,
+                  ]}
+                >
+                  <Text style={styles.miniButtonText}>{isListening ? 'Mute' : 'Listen'}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setIsExpanded(false)}
+                  style={styles.closeButton}
+                >
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Scrollable Floating Content */}
+          <ScrollView
+            style={styles.floatingScroll}
+            contentContainerStyle={styles.floatingScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Live Voice Response Transcribed Stream */}
+            <View style={styles.transcriptionStreamBox}>
+              <View style={styles.transcriptionHeader}>
+                <View style={styles.liveVoiceIndicator}>
+                  <View style={[styles.pulseDot, isVoiceActive && styles.pulseDotActive]} />
+                  <Text style={styles.transcriptionTitle}>
+                    {isVoiceActive ? 'LIVE VOICE TRANSCRIBING...' : 'LIVE VOICE TRANSCRIPT'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={onTriggerVoiceSync}>
+                  <Text style={styles.voiceSyncBtnText}>⚡ Test Voice Sync</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.transcriptionText}>
+                {liveVoiceTranscript || 'Listening for interviewer voice questions... Spoken answers convert to visual diagrams in real time.'}
+              </Text>
+            </View>
+
+            {/* LIVE VOICE-TO-VISUAL DIAGRAM (Converts voice response to visual cards) */}
+            <View style={styles.visualDiagramCard}>
+              <View style={styles.visualHeaderRow}>
+                <Text style={styles.visualLabel}>DYNAMIC ARCHITECTURE TOPOLOGY</Text>
+                {activeSpokenEntities.length > 0 && (
+                  <Text style={styles.voiceSyncActiveTag}>Voice Synced</Text>
+                )}
+              </View>
+
+              {/* Dynamic Nodes with Active Spoken Highlight */}
+              <View style={styles.nodesGrid}>
+                {visualNodes.map((node) => {
+                  const isNodeSpoken = activeSpokenEntities.some(
+                    (entity) =>
+                      node.label.toLowerCase().includes(entity.toLowerCase()) ||
+                      entity.toLowerCase().includes(node.label.toLowerCase())
+                  );
+
+                  return (
+                    <View
+                      key={node.id}
+                      style={[
+                        styles.topologyNode,
+                        isNodeSpoken && styles.topologyNodeSpoken,
+                      ]}
+                    >
+                      <View style={styles.nodeTopRow}>
+                        <Text style={[styles.nodeRole, isNodeSpoken && styles.nodeRoleSpoken]}>
+                          {node.role}
+                        </Text>
+                        {isNodeSpoken && (
+                          <View style={styles.activeVoiceBadge}>
+                            <Text style={styles.activeVoiceBadgeText}>ACTIVE</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.nodeLabel, isNodeSpoken && styles.nodeLabelSpoken]}>
+                        {node.label}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Glanceable 5-Second Quick Answer */}
+            <View style={styles.quickAnswerBox}>
+              <Text style={styles.quickAnswerHeader}>⚡ 5-SECOND ANSWER</Text>
+              <Text style={styles.quickAnswerContent}>{currentAnswer.quickAnswer}</Text>
+            </View>
+
+            {/* Key Talking Points */}
+            <View style={styles.talkingPointsBox}>
+              <Text style={styles.talkingPointsHeader}>ACTIONABLE TALKING POINTS</Text>
+              {currentAnswer.talkingPoints.slice(0, 3).map((pt, i) => (
+                <View key={i} style={styles.pointRow}>
+                  <Text style={styles.pointDot}>•</Text>
+                  <Text style={styles.pointText}>{pt}</Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+
+          {/* Floating Footer Toolbar */}
+          <View style={styles.floatingFooter}>
+            <Text style={styles.dockNoticeText}>Drag header to move anywhere</Text>
+            <TouchableOpacity onPress={() => setIsExpanded(false)} style={styles.dockButton}>
+              <Text style={styles.dockButtonText}>Dock to Corner</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </Animated.View>
+  );
+};
+
+// -------------------------------------------------------------
+// MAIN EXPO GO APPLICATION COMPONENT
+// -------------------------------------------------------------
 export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [activeTab, setActiveTab] = useState<'copilot' | 'transcript' | 'visual' | 'profile'>('copilot');
-  const [questionText, setQuestionText] = useState('How would you design a scalable .NET API on Azure?');
-  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Live Voice Response Transcription & Voice-to-Visual Synchronization
+  const [liveVoiceTranscript, setLiveVoiceTranscript] = useState(
+    'For a scalable .NET API on Azure, client ingress passes through Azure API Management before routing to stateless ASP.NET Core API microservices with Redis caching.'
+  );
+  const [activeSpokenEntities, setActiveSpokenEntities] = useState<string[]>([
+    'Azure API Mgmt',
+    'ASP.NET Core API',
+  ]);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
 
   // Active answer model
   const [currentAnswer, setCurrentAnswer] = useState({
     question: 'How would you design a scalable .NET API on Azure?',
-    questionType: 'architecture',
     quickAnswer: 'Use a stateless ASP.NET Core API, secure authentication, managed data storage, appropriate scaling, caching where beneficial, and end-to-end observability.',
     talkingPoints: [
       'Security: authentication, authorisation (Azure AD / Entra ID), secret management via Azure Key Vault.',
@@ -32,16 +326,12 @@ export default function App() {
       'Performance: Azure Cache for Redis and database query optimisation.',
       'Observability: structured logs, metrics, distributed tracing via Azure Monitor & Application Insights.',
     ],
-    explanation: 'A resilient Azure cloud API decouples client ingress via Azure API Management, directing requests to autoscaling ASP.NET Core container instances. Downstream state operations leverage connection-pooled Azure SQL / Cosmos DB with Redis read-through caching to hit sub-5ms p99 latency SLAs.',
+    explanation: 'A resilient Azure cloud API decouples client ingress via Azure API Management, directing requests to autoscaling ASP.NET Core container instances. Token verification occurs at the gateway layer, while downstream state operations leverage connection-pooled Azure SQL / Cosmos DB with Redis read-through caching to hit sub-5ms p99 latency SLAs.',
     tradeoffs: [
       'Managed cloud PaaS services reduce operational toil but increase vendor coupling.',
       'Multi-region active-active databases require conflict resolution strategies (e.g. Cosmos DB multi-master).',
     ],
     followUp: 'How would you handle database bottlenecks when traffic spikes 10x?',
-    sources: [
-      'Microsoft Azure Architecture Center: Highly Scalable Web Apps',
-      '.NET Official Documentation: Resilience and Transient Fault Handling with Polly',
-    ],
   });
 
   const [transcript, setTranscript] = useState([
@@ -85,6 +375,42 @@ export default function App() {
     }
   };
 
+  // Simulates live voice response streaming and converts it back into visual diagram highlights
+  const triggerVoiceSyncSimulation = () => {
+    setIsVoiceActive(true);
+    const spokenSteps = [
+      {
+        transcript: 'Client ingress arrives through Azure API Management for rate limiting and token authentication.',
+        entities: ['Client Ingress', 'Azure API Mgmt'],
+      },
+      {
+        transcript: 'Requests route directly to stateless ASP.NET Core API microservices running on autoscaling container clusters.',
+        entities: ['ASP.NET Core API'],
+      },
+      {
+        transcript: 'High-frequency read queries leverage Azure Cache for Redis to guarantee sub-5 millisecond p99 latency.',
+        entities: ['Azure Redis Cache'],
+      },
+      {
+        transcript: 'Persistence operations flow into Azure SQL and Cosmos DB with Polly handling circuit-breaker retries.',
+        entities: ['Azure SQL / Cosmos'],
+      },
+    ];
+
+    let currentStep = 0;
+    const interval = setInterval(() => {
+      if (currentStep >= spokenSteps.length) {
+        clearInterval(interval);
+        setIsVoiceActive(false);
+        return;
+      }
+
+      setLiveVoiceTranscript(spokenSteps[currentStep].transcript);
+      setActiveSpokenEntities(spokenSteps[currentStep].entities);
+      currentStep++;
+    }, 1800);
+  };
+
   const shareAnswer = async () => {
     try {
       await Share.share({
@@ -118,7 +444,7 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* Main Content View by Tab */}
+      {/* Main Screen Content View by Tab */}
       <View style={styles.content}>
         {activeTab === 'copilot' && (
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -163,12 +489,6 @@ export default function App() {
               <Text style={styles.followUpLabel}>LIKELY INTERVIEWER FOLLOW-UP:</Text>
               <Text style={styles.followUpText}>"{currentAnswer.followUp}"</Text>
             </View>
-
-            {/* In-depth explanation */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>TECHNICAL DEEP DIVE</Text>
-              <Text style={styles.bodyText}>{currentAnswer.explanation}</Text>
-            </View>
           </ScrollView>
         )}
 
@@ -189,7 +509,7 @@ export default function App() {
 
         {activeTab === 'visual' && (
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-            <Text style={styles.sectionHeader}>Visual Architecture Model</Text>
+            <Text style={styles.sectionHeader}>Full System Topology Model</Text>
             <View style={styles.diagramContainer}>
               <View style={styles.diagramNode}>
                 <Text style={styles.nodeType}>INGRESS</Text>
@@ -216,18 +536,13 @@ export default function App() {
                   <Text style={styles.nodeLabel}>Azure SQL / Cosmos</Text>
                 </View>
               </View>
-              <Text style={styles.diagramArrow}>▼ OpenTelemetry Telemetry</Text>
-              <View style={styles.diagramNode}>
-                <Text style={styles.nodeType}>OBSERVABILITY</Text>
-                <Text style={styles.nodeLabel}>Azure Application Insights & Monitor</Text>
-              </View>
             </View>
           </ScrollView>
         )}
 
         {activeTab === 'profile' && (
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-            <Text style={styles.sectionHeader}>Verified Candidate Profile</Text>
+            <Text style={styles.sectionHeader}>Candidate Verified Profile</Text>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>CANDIDATE DETAILS</Text>
               <Text style={styles.profileName}>Alex Mercer</Text>
@@ -235,15 +550,22 @@ export default function App() {
               <Text style={styles.profileExp}>9 Years Professional Experience</Text>
               <Text style={styles.profileSkills}>Tech Stack: C# .NET 9, Azure, AKS, Redis, Cosmos DB, Kafka</Text>
             </View>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>VERIFIED PROJECT REFERENCE</Text>
-              <Text style={styles.projectTitle}>High-Throughput Financial Billing on Azure</Text>
-              <Text style={styles.bodyText}>Stateless ASP.NET Core microservices processing 60,000 req/sec with sub-5ms p99 latency.</Text>
-              <Text style={styles.outcomeText}>Result: 99.995% SLA and $450k annual cloud savings.</Text>
-            </View>
           </ScrollView>
         )}
       </View>
+
+      {/* ------------------------------------------------------------- */}
+      {/* PERSISTENT FLOATING WIDGET HOVERING OVER ALL MOBILE SCREENS    */}
+      {/* ------------------------------------------------------------- */}
+      <FloatingMobileWidget
+        isListening={isRecording}
+        onToggleListen={isRecording ? stopRecording : startRecording}
+        currentAnswer={currentAnswer}
+        liveVoiceTranscript={liveVoiceTranscript}
+        activeSpokenEntities={activeSpokenEntities}
+        isVoiceActive={isVoiceActive}
+        onTriggerVoiceSync={triggerVoiceSyncSimulation}
+      />
 
       {/* Bottom Navigation Tabs */}
       <View style={styles.bottomNav}>
@@ -264,6 +586,9 @@ export default function App() {
   );
 }
 
+// -------------------------------------------------------------
+// STYLES
+// -------------------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -277,7 +602,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#27272a',
-    backgroundColor: '#18181b',
+    backgroundColor: '#09090b',
   },
   brandRow: {
     flexDirection: 'row',
@@ -299,30 +624,30 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     color: '#f4f4f5',
-    fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '700',
   },
   brandSubtitle: {
     color: '#a1a1aa',
     fontSize: 10,
+    fontFamily: 'monospace',
   },
   recordButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    gap: 6,
-  },
-  recordButtonActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    borderColor: '#10b981',
     borderWidth: 1,
   },
   recordButtonInactive: {
-    backgroundColor: '#27272a',
+    backgroundColor: '#18181b',
     borderColor: '#3f3f46',
-    borderWidth: 1,
+  },
+  recordButtonActive: {
+    backgroundColor: '#052e16',
+    borderColor: '#10b981',
   },
   recordButtonText: {
     color: '#f4f4f5',
@@ -330,15 +655,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusDotActive: {
-    backgroundColor: '#10b981',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusDotInactive: {
     backgroundColor: '#71717a',
+  },
+  statusDotActive: {
+    backgroundColor: '#10b981',
   },
   content: {
     flex: 1,
@@ -349,6 +674,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     gap: 12,
+    paddingBottom: 80,
   },
   questionCard: {
     backgroundColor: '#18181b',
@@ -361,16 +687,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   typeTag: {
-    color: '#a855f7',
+    color: '#c084fc',
     fontSize: 10,
     fontWeight: '700',
-    backgroundColor: 'rgba(168, 85, 247, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    fontFamily: 'monospace',
   },
   actionLink: {
     color: '#a1a1aa',
@@ -379,28 +702,28 @@ const styles = StyleSheet.create({
   },
   questionHeading: {
     color: '#f4f4f5',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     lineHeight: 20,
   },
   quickAnswerCard: {
-    backgroundColor: 'rgba(124, 58, 237, 0.12)',
-    borderColor: 'rgba(124, 58, 237, 0.35)',
-    borderWidth: 1,
+    backgroundColor: '#3b0764',
     borderRadius: 12,
     padding: 14,
+    borderWidth: 1,
+    borderColor: '#7e22ce',
   },
   quickAnswerLabel: {
-    color: '#c084fc',
+    color: '#d8b4fe',
     fontSize: 10,
     fontWeight: '700',
+    fontFamily: 'monospace',
     marginBottom: 6,
-    letterSpacing: 0.5,
   },
   quickAnswerText: {
     color: '#ffffff',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
     lineHeight: 18,
   },
   card: {
@@ -414,66 +737,62 @@ const styles = StyleSheet.create({
     color: '#a1a1aa',
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    fontFamily: 'monospace',
     marginBottom: 8,
   },
   bulletRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 6,
     gap: 8,
+    marginBottom: 6,
   },
   bulletDot: {
-    color: '#10b981',
+    color: '#34d399',
     fontSize: 14,
     lineHeight: 18,
   },
   bulletText: {
     color: '#e4e4e7',
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
     flex: 1,
   },
   warningCard: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderColor: 'rgba(245, 158, 11, 0.25)',
-    borderWidth: 1,
+    backgroundColor: '#451a03',
     borderRadius: 12,
     padding: 12,
+    borderWidth: 1,
+    borderColor: '#b45309',
   },
   warningLabel: {
-    color: '#fbbf24',
+    color: '#fcd34d',
     fontSize: 10,
     fontWeight: '700',
+    fontFamily: 'monospace',
     marginBottom: 4,
   },
   warningText: {
     color: '#fef3c7',
     fontSize: 11,
     lineHeight: 16,
-    marginBottom: 2,
   },
   followUpLabel: {
-    color: '#a855f7',
+    color: '#a1a1aa',
     fontSize: 10,
     fontWeight: '700',
+    fontFamily: 'monospace',
     marginBottom: 4,
   },
   followUpText: {
-    color: '#f4f4f5',
+    color: '#38bdf8',
     fontSize: 12,
     fontStyle: 'italic',
   },
-  bodyText: {
-    color: '#d4d4d8',
-    fontSize: 12,
-    lineHeight: 18,
-  },
   sectionHeader: {
     color: '#f4f4f5',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   transcriptCard: {
     backgroundColor: '#18181b',
@@ -490,8 +809,9 @@ const styles = StyleSheet.create({
   },
   speakerText: {
     color: '#c084fc',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
+    fontFamily: 'monospace',
   },
   timeText: {
     color: '#71717a',
@@ -500,7 +820,7 @@ const styles = StyleSheet.create({
   transcriptBody: {
     color: '#e4e4e7',
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 17,
   },
   diagramContainer: {
     backgroundColor: '#18181b',
@@ -509,59 +829,59 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#27272a',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   diagramNode: {
-    width: '100%',
     backgroundColor: '#27272a',
     borderRadius: 8,
     padding: 10,
+    width: '100%',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#3f3f46',
   },
   diagramNodeHighlight: {
-    borderColor: '#7c3aed',
-    backgroundColor: 'rgba(124, 58, 237, 0.2)',
+    backgroundColor: '#3b0764',
+    borderColor: '#9333ea',
   },
   diagramRow: {
-    width: '100%',
     flexDirection: 'row',
     gap: 8,
+    width: '100%',
   },
   diagramNodeHalf: {
     flex: 1,
     backgroundColor: '#27272a',
     borderRadius: 8,
     padding: 10,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#3f3f46',
   },
   nodeType: {
     color: '#a1a1aa',
     fontSize: 9,
-    fontWeight: '700',
+    fontFamily: 'monospace',
     marginBottom: 2,
   },
   nodeLabel: {
-    color: '#ffffff',
+    color: '#f4f4f5',
     fontSize: 11,
     fontWeight: '600',
   },
   diagramArrow: {
     color: '#71717a',
     fontSize: 10,
-    fontWeight: '600',
+    fontFamily: 'monospace',
   },
   profileName: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 2,
+    color: '#f4f4f5',
+    fontSize: 15,
+    fontWeight: '700',
   },
   profileRole: {
     color: '#c084fc',
     fontSize: 12,
-    fontWeight: '600',
     marginBottom: 4,
   },
   profileExp: {
@@ -570,28 +890,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   profileSkills: {
-    color: '#d4d4d8',
+    color: '#e4e4e7',
     fontSize: 11,
-  },
-  projectTitle: {
-    color: '#38bdf8',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  outcomeText: {
-    color: '#34d399',
-    fontSize: 11,
-    marginTop: 4,
-    fontWeight: '500',
+    lineHeight: 16,
   },
   bottomNav: {
     flexDirection: 'row',
-    backgroundColor: '#18181b',
     borderTopWidth: 1,
     borderTopColor: '#27272a',
+    backgroundColor: '#09090b',
     paddingVertical: 10,
-    paddingHorizontal: 8,
   },
   navItem: {
     flex: 1,
@@ -600,10 +908,386 @@ const styles = StyleSheet.create({
   navText: {
     color: '#71717a',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   navTextActive: {
-    color: '#a855f7',
+    color: '#c084fc',
     fontWeight: '700',
+  },
+
+  // -----------------------------------------------------------
+  // FLOATING WIDGET STYLES
+  // -----------------------------------------------------------
+  floatingContainer: {
+    position: 'absolute',
+    zIndex: 9999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 14,
+    elevation: 20,
+  },
+  collapsedLauncher: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#18181b',
+    borderWidth: 2,
+    borderColor: '#7c3aed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  collapsedLauncherListening: {
+    borderColor: '#10b981',
+    shadowColor: '#10b981',
+  },
+  collapsedLauncherVoiceActive: {
+    borderColor: '#38bdf8',
+    backgroundColor: '#0c4a6e',
+  },
+  launcherLogo: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#7c3aed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  launcherLogoText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  launcherBadgeText: {
+    color: '#f4f4f5',
+    fontSize: 8,
+    fontWeight: '700',
+    marginTop: 2,
+    fontFamily: 'monospace',
+  },
+  miniStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    position: 'absolute',
+    top: 6,
+    right: 8,
+  },
+  dotListening: {
+    backgroundColor: '#10b981',
+  },
+  dotIdle: {
+    backgroundColor: '#71717a',
+  },
+  voiceWaveRow: {
+    flexDirection: 'row',
+    gap: 2,
+    alignItems: 'center',
+    position: 'absolute',
+    top: 6,
+    right: 6,
+  },
+  waveBar: {
+    width: 2,
+    backgroundColor: '#38bdf8',
+    borderRadius: 1,
+  },
+  waveBar1: { height: 6 },
+  waveBar2: { height: 10 },
+  waveBar3: { height: 7 },
+
+  // Expanded Floating Card
+  expandedCard: {
+    width: SCREEN_WIDTH > 360 ? 330 : SCREEN_WIDTH - 24,
+    maxHeight: 460,
+    backgroundColor: '#121215',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#7c3aed',
+    overflow: 'hidden',
+  },
+  floatingHeader: {
+    backgroundColor: '#18181b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272a',
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    paddingBottom: 8,
+  },
+  dragHandleBar: {
+    width: 32,
+    height: 3,
+    backgroundColor: '#52525b',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 6,
+  },
+  floatingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  floatingTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  miniLogo: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    backgroundColor: '#7c3aed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniLogoText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  floatingTitle: {
+    color: '#f4f4f5',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  floatingSubtitle: {
+    color: '#a1a1aa',
+    fontSize: 9,
+    fontFamily: 'monospace',
+  },
+  floatingHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  miniHeaderButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  miniHeaderButtonInactive: {
+    backgroundColor: '#27272a',
+    borderColor: '#3f3f46',
+  },
+  miniHeaderButtonActive: {
+    backgroundColor: '#064e3b',
+    borderColor: '#10b981',
+  },
+  miniButtonText: {
+    color: '#f4f4f5',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  closeButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#27272a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  floatingScroll: {
+    maxHeight: 360,
+  },
+  floatingScrollContent: {
+    padding: 12,
+    gap: 10,
+  },
+  transcriptionStreamBox: {
+    backgroundColor: '#18181b',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#27272a',
+  },
+  transcriptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  liveVoiceIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#71717a',
+  },
+  pulseDotActive: {
+    backgroundColor: '#38bdf8',
+  },
+  transcriptionTitle: {
+    color: '#38bdf8',
+    fontSize: 9,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  voiceSyncBtnText: {
+    color: '#c084fc',
+    fontSize: 9,
+    fontFamily: 'monospace',
+    fontWeight: '700',
+  },
+  transcriptionText: {
+    color: '#e4e4e7',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  visualDiagramCard: {
+    backgroundColor: '#18181b',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+  },
+  visualHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  visualLabel: {
+    color: '#a1a1aa',
+    fontSize: 9,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  voiceSyncActiveTag: {
+    color: '#34d399',
+    fontSize: 9,
+    fontFamily: 'monospace',
+    fontWeight: '700',
+  },
+  nodesGrid: {
+    gap: 5,
+  },
+  topologyNode: {
+    backgroundColor: '#27272a',
+    borderRadius: 6,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+  },
+  topologyNodeSpoken: {
+    backgroundColor: '#064e3b',
+    borderColor: '#10b981',
+  },
+  nodeTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  nodeRole: {
+    color: '#a1a1aa',
+    fontSize: 8,
+    fontFamily: 'monospace',
+  },
+  nodeRoleSpoken: {
+    color: '#a7f3d0',
+  },
+  activeVoiceBadge: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  activeVoiceBadgeText: {
+    color: '#ffffff',
+    fontSize: 7,
+    fontWeight: 'bold',
+  },
+  nodeLabelSpoken: {
+    color: '#ecfdf5',
+    fontWeight: '700',
+  },
+  quickAnswerBox: {
+    backgroundColor: '#3b0764',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#7e22ce',
+  },
+  quickAnswerHeader: {
+    color: '#d8b4fe',
+    fontSize: 9,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+    marginBottom: 3,
+  },
+  quickAnswerContent: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '500',
+    lineHeight: 15,
+  },
+  talkingPointsBox: {
+    backgroundColor: '#18181b',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#27272a',
+  },
+  talkingPointsHeader: {
+    color: '#a1a1aa',
+    fontSize: 9,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  pointRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 3,
+  },
+  pointDot: {
+    color: '#34d399',
+    fontSize: 12,
+  },
+  pointText: {
+    color: '#e4e4e7',
+    fontSize: 10,
+    lineHeight: 14,
+    flex: 1,
+  },
+  floatingFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#18181b',
+    borderTopWidth: 1,
+    borderTopColor: '#27272a',
+  },
+  dockNoticeText: {
+    color: '#71717a',
+    fontSize: 9,
+    fontFamily: 'monospace',
+  },
+  dockButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#27272a',
+  },
+  dockButtonText: {
+    color: '#c084fc',
+    fontSize: 9,
+    fontWeight: '600',
   },
 });

@@ -26,6 +26,9 @@ interface QuickAnswerCardProps {
   onSave: () => void;
   onRegenerate: () => void;
   isSaved?: boolean;
+  activeVoiceEntities?: string[];
+  isLiveVoiceActive?: boolean;
+  liveVoiceHighlightSummary?: string;
 }
 
 export const QuickAnswerCard: React.FC<QuickAnswerCardProps> = ({
@@ -34,6 +37,9 @@ export const QuickAnswerCard: React.FC<QuickAnswerCardProps> = ({
   onSave,
   onRegenerate,
   isSaved,
+  activeVoiceEntities = [],
+  isLiveVoiceActive = false,
+  liveVoiceHighlightSummary,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
@@ -174,7 +180,14 @@ export const QuickAnswerCard: React.FC<QuickAnswerCardProps> = ({
               {showVisual ? 'Hide Diagram' : 'Show Diagram'}
             </button>
           </div>
-          {showVisual && <VisualizationPanel visualization={answer.visualization} />}
+          {showVisual && (
+            <VisualizationPanel
+              visualization={answer.visualization}
+              activeVoiceEntities={activeVoiceEntities}
+              isLiveVoiceActive={isLiveVoiceActive}
+              liveVoiceHighlightSummary={liveVoiceHighlightSummary}
+            />
+          )}
         </div>
       )}
 

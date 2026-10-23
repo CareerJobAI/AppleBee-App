@@ -12,6 +12,7 @@ import {
 import { audioCapture } from '../services/audioCapture';
 import { speechService } from '../services/speechRecognition';
 import { liveVoiceService } from '../services/liveAudioService';
+import { mapSpokenTranscriptToVisual } from '../utils/voiceVisualMapper';
 
 const PREFERENCES_KEY = 'applebee_widget_preferences';
 const ANSWER_LIBRARY_KEY = 'applebee_saved_answers';
@@ -78,6 +79,11 @@ export function useInterviewSession() {
   const [currentRole, setCurrentRole] = useState<string>('Senior .NET & Azure Cloud Architect');
   const [mockEvaluation, setMockEvaluation] = useState<MockEvaluationResult | null>(null);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+
+  // Live voice to visual synchronization state
+  const [activeVoiceEntities, setActiveVoiceEntities] = useState<string[]>([]);
+  const [liveVoiceHighlightSummary, setLiveVoiceHighlightSummary] = useState<string>('');
+  const [isModelSpeaking, setIsModelSpeaking] = useState<boolean>(false);
 
   const [candidateProfile, setCandidateProfile] = useState<CandidateProfile>(() => {
     try {
@@ -370,11 +376,61 @@ export function useInterviewSession() {
         onAudioLevel: (inLvl, outLvl) => {
           setLiveVoiceAudioLevel(Math.max(inLvl, outLvl));
         },
+        onTranscription: (text, isModel, isTurnComplete) => {
+          setIsModelSpeaking(true);
+          // Convert spoken voice directly back into dynamic visual explanation
+          setCurrentAnswer((prev) => {
+            const mapped = mapSpokenTranscriptToVisual(
+              text,
+              prev?.visualization || null,
+              prev?.questionType || 'architecture'
+            );
+            setActiveVoiceEntities(mapped.activeEntities);
+            setLiveVoiceHighlightSummary(mapped.highlightSummary);
+
+            if (!prev) return prev;
+            return {
+              ...prev,
+              visualization: mapped.visualization,
+            };
+          });
+
+          // Also record into transcript stream
+          setTranscript((prev) => {
+            const lastSegment = prev[prev.length - 1];
+            if (lastSegment && lastSegment.speaker === 'interviewer' && !lastSegment.isFinal) {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                ...lastSegment,
+                text: `${lastSegment.text} ${text}`.trim(),
+                isFinal: isTurnComplete,
+              };
+              return updated;
+            } else {
+              return [
+                ...prev,
+                {
+                  id: 'live_voice_' + Date.now(),
+                  speaker: 'interviewer' as const,
+                  text,
+                  timestamp: Date.now(),
+                  isFinal: isTurnComplete,
+                },
+              ];
+            }
+          });
+
+          if (isTurnComplete) {
+            setIsModelSpeaking(false);
+          }
+        },
         onInterrupted: () => {
           console.log('[Live Voice] Model turn interrupted by user speech');
+          setIsModelSpeaking(false);
         },
         onError: (err) => {
           setErrorMessage(err.message);
+          setIsModelSpeaking(false);
         },
       });
     } catch (e: any) {
@@ -382,6 +438,66 @@ export function useInterviewSession() {
       updatePreferences({ voiceMode: false });
     }
   }, [preferences.voiceMode, updatePreferences]);
+
+  // High-fidelity voice simulation helper: transcribes voice responses chunk-by-chunk and animates visual topology live
+  const simulateVoiceResponseAndVisualize = useCallback(
+    (customText?: string) => {
+      setIsModelSpeaking(true);
+      const voiceScript = [
+        'Client requests arrive through Azure API Management for TLS termination and token authentication.',
+        'The gateway routes to stateless ASP.NET Core API microservice containers running on Azure App Service.',
+        'High-frequency read queries are served directly from Azure Cache for Redis with sub-5ms latency.',
+        'Relational data persistence is managed by Azure SQL with Polly implementing exponential backoff retries.',
+        'Azure Application Insights monitors distributed telemetry and alerts on p99 latency regressions.',
+      ];
+
+      const scriptToRun = customText ? [customText] : voiceScript;
+      let step = 0;
+
+      const interval = setInterval(() => {
+        if (step >= scriptToRun.length) {
+          clearInterval(interval);
+          setIsModelSpeaking(false);
+          return;
+        }
+
+        const chunk = scriptToRun[step];
+        setLiveVoiceAudioLevel(68 + Math.round(Math.random() * 25));
+
+        // Map chunk to visual diagram
+        setCurrentAnswer((prev) => {
+          const mapped = mapSpokenTranscriptToVisual(
+            chunk,
+            prev?.visualization || null,
+            prev?.questionType || 'architecture'
+          );
+          setActiveVoiceEntities(mapped.activeEntities);
+          setLiveVoiceHighlightSummary(mapped.highlightSummary);
+
+          if (!prev) return prev;
+          return {
+            ...prev,
+            visualization: mapped.visualization,
+          };
+        });
+
+        // Add to transcript
+        setTranscript((prev) => [
+          ...prev,
+          {
+            id: 'voice_sim_' + Date.now() + '_' + step,
+            speaker: 'interviewer',
+            text: chunk,
+            timestamp: Date.now(),
+            isFinal: true,
+          },
+        ]);
+
+        step++;
+      }, 1500);
+    },
+    []
+  );
 
   // Pause listening
   const pauseSession = useCallback(() => {
@@ -531,5 +647,9 @@ export function useInterviewSession() {
     simulateInterviewQuestion,
     setCurrentAnswer,
     toggleLiveVoiceMode,
+    activeVoiceEntities,
+    liveVoiceHighlightSummary,
+    isModelSpeaking,
+    simulateVoiceResponseAndVisualize,
   };
 }

@@ -11,6 +11,7 @@ export interface LiveVoiceCallbacks {
   onAudioLevel?: (inputLevel: number, outputLevel: number) => void;
   onInterrupted?: () => void;
   onError?: (error: Error) => void;
+  onTranscription?: (text: string, isModel: boolean, isTurnComplete: boolean) => void;
 }
 
 export class LiveVoiceService {
@@ -45,6 +46,13 @@ export class LiveVoiceService {
           const msg = JSON.parse(event.data);
           if (msg.audio) {
             this.playAudioChunk(msg.audio);
+          }
+          if (msg.transcription) {
+            this.callbacks.onTranscription?.(
+              msg.transcription,
+              msg.role === 'model',
+              Boolean(msg.turnComplete)
+            );
           }
           if (msg.interrupted) {
             this.handleInterruption();
@@ -177,6 +185,12 @@ export class LiveVoiceService {
   public sendTextMessage(text: string) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ text }));
+    }
+  }
+
+  public triggerVoiceResponseSimulation() {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ simulateVoiceResponse: true }));
     }
   }
 
